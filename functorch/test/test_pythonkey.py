@@ -21,6 +21,7 @@ from functorch import (
     make_fx
 )
 from functorch._src.aot_autograd import aot_module_simplified
+import functorch._src.config as config
 from functorch.compile import (
     nnc_jit, compiled_function, compiled_module,
     min_cut_rematerialization_partition, aot_function, aot_module,
@@ -352,6 +353,43 @@ class TestAOTAutograd(AOTTestCase):
         f = aot_function(f, list_nop)
         inp = [torch.randn(5, requires_grad=True) for _ in range(3)]
         f(*inp).sum().backward()
+
+    def test_pre_autograd_decomps(self):
+
+        def fn(x):
+            return torch.nn.functional.interpolate(x, scale_factor=2., mode='bilinear') + 1
+
+        config.use_pre_autograd_decomposition = True
+
+        def assert_compiler(gm, args):
+            for node in gm.graph.nodes:
+                assert node.target is not torch.ops.aten.upsample_bilinear2d.vec
+                assert node.target is not torch.ops.aten.upsample_bilinear2d_backward.vec
+            return gm
+
+        compiled_f = aot_function(fn, assert_compiler)
+        inp = [torch.randn(4, 3, 10, 10, requires_grad=True)]
+
+        ref_out, ref_grad = _outs_and_grads(fn, inp)
+        test_out, test_grad = _outs_and_grads(compiled_f, inp)
+        self.assertEqual(ref_out, test_out)
+        self.assertEqual(ref_grad, test_grad)
+
+        config.use_pre_autograd_decomposition = False
+
+        def assert_compiler(gm, args):
+            found = False
+            for node in gm.graph.nodes:
+                if node.target in {torch.ops.aten.upsample_bilinear2d.vec,
+                                   torch.ops.aten.upsample_bilinear2d_backward.vec}:
+                    found = True
+                    break
+            assert found
+            return gm
+
+        compiled_f = aot_function(fn, assert_compiler)
+        test_out, test_grad = _outs_and_grads(compiled_f, inp)
+
 
     def test_compilation_context(self):
         def f(x):

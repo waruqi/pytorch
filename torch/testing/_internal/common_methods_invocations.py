@@ -8228,6 +8228,7 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, 'TestProxyTensorOpInfo', 'test_make_fx_symbolic_exhaustive'),
                # aten.uniform was not decomposed
                DecorateInfo(unittest.expectedFailure, 'TestDecomp', 'test_quick'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
            )),
     BinaryUfuncInfo('clamp_max',
                     ref=_clamp_max_numpy,
@@ -10024,6 +10025,9 @@ op_db: List[OpInfo] = [
            supports_fwgrad_bwgrad=True,
            # https://github.com/pytorch/pytorch/issues/66357
            check_batched_forward_grad=False,
+           decorators=[
+               DecorateInfo(toleranceOverride({torch.float32: tol(atol=1e-05, rtol=1e-03)}),
+                            'TestCommon', 'test_compare_cpu')],
            skips=(
                # times out
                DecorateInfo(unittest.skip('Skipped!'), 'TestCudaFuserOpInfo', 'test_nvfuser_extremal_values'),
@@ -10054,6 +10058,8 @@ op_db: List[OpInfo] = [
                DecorateInfo(toleranceOverride({torch.float32: tol(atol=1e-4, rtol=0)}),
                             'TestCommon', 'test_out', device_type='cuda',
                             active_if=TEST_WITH_ROCM),
+               DecorateInfo(toleranceOverride({torch.float32: tol(atol=1e-4, rtol=1e-4)}),
+                            'TestCommon', 'test_compare_cpu'),
                # mv for the sample with shapes (S, S, M, M), (M,) has some variance in the
                # backward on CPU
                DecorateInfo(toleranceOverride({torch.float32: tol(atol=0, rtol=1e-5)}),
@@ -10518,7 +10524,10 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, 'TestGradients', 'test_fn_gradgrad'),
                DecorateInfo(unittest.skip('Passes on complex128 and float64 only'), 'TestGradients', 'test_fn_fwgrad_bwgrad'),
                # AssertionError: Tensor-likes are not close! (new_empty_strided.default)
-               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"), 'TestDecomp', 'test_comprehensive'),)),
+               DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"), 'TestDecomp', 'test_comprehensive'),
+               DecorateInfo(
+                   unittest.skip("Some stride values write multiple values to the same location e.g. (1,1,1,1)"),
+                   'TestCommon', 'test_compare_cpu'),)),
     OpInfo('native_layer_norm',
            aten_name='native_layer_norm',
            ref=reference_native_layer_norm,
@@ -10529,6 +10538,10 @@ op_db: List[OpInfo] = [
            supports_fwgrad_bwgrad=True,
            sample_inputs_func=sample_inputs_native_layer_norm,
            error_inputs_func=error_inputs_native_layer_norm,
+           decorators=[
+               DecorateInfo(
+                   toleranceOverride({torch.float32: tol(atol=1e-04, rtol=1e-04), }),
+                   'TestCommon', 'test_compare_cpu', device_type='cuda')],
            skips=(
                # IndexError: tuple index out of range
                DecorateInfo(unittest.skip('Skipped!'), 'TestGradients', 'test_forward_mode_AD'),
@@ -10761,7 +10774,10 @@ op_db: List[OpInfo] = [
            decorators=[
                DecorateInfo(
                    toleranceOverride({torch.float32: tol(atol=1e-04, rtol=1.3e-06), }),
-                   'TestCommon', 'test_variant_consistency_eager', device_type='cuda')],
+                   'TestCommon', 'test_variant_consistency_eager', device_type='cuda'),
+               DecorateInfo(
+                   toleranceOverride({torch.float32: tol(atol=1e-04, rtol=1e-05), }),
+                   'TestCommon', 'test_compare_cpu')],
            skips=(
                # RuntimeError: !lhs.isAliasOf(rhs)INTERNAL ASSERT FAILED at
                # "../torch/csrc/jit/passes/utils/check_alias_annotation.cpp":104, please report a bug to PyTorch.
@@ -10790,6 +10806,9 @@ op_db: List[OpInfo] = [
                DecorateInfo(
                    toleranceOverride({torch.float32: tol(atol=1.3e-04, rtol=1.3e-06), }),
                    'TestCommon', 'test_noncontiguous_samples', device_type='cuda'),
+               DecorateInfo(
+                   toleranceOverride({torch.float32: tol(atol=1.3e-04, rtol=1.3e-06), }),
+                   'TestCommon', 'test_compare_cpu'),
                DecorateInfo(
                    toleranceOverride({torch.float32: tol(atol=1e-04, rtol=2e-05), }),
                    'TestCompositeCompliance', 'test_forward_ad', device_type='cuda',
@@ -10924,7 +10943,11 @@ op_db: List[OpInfo] = [
                DecorateInfo(
                    toleranceOverride({torch.float32: tol(atol=1e-05, rtol=1e-03)}),
                    'TestCommon', 'test_numpy_refs'
-               )
+               ),
+               DecorateInfo(
+                   toleranceOverride({torch.float32: tol(atol=1e-05, rtol=1e-03)}),
+                   'TestCommon', 'test_compare_cpu'
+               ),
            ],
            sample_inputs_func=sample_inputs_layer_norm,
            supports_expanded_weight=True,),
@@ -11285,7 +11308,9 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, 'TestNormalizeOperators', 'test_normalize_operator_exhaustive'),
                # RuntimeError: input->type()->kind() == TypeKind::OptionalType
                # INTERNAL ASSERT FAILED at "../torch/csrc/jit/passes/utils/check_alias_annotation.cpp":270
-               DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'))),
+               DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit')),
+           skips=(
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),)),
     OpInfo('nn.functional.fractional_max_pool3d',
            supports_autograd=True,
            supports_out=False,
@@ -11306,7 +11331,9 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, 'TestNormalizeOperators', 'test_normalize_operator_exhaustive'),
                # RuntimeError: input->type()->kind() == TypeKind::OptionalType
                # INTERNAL ASSERT FAILED at "../torch/csrc/jit/passes/utils/check_alias_annotation.cpp":270
-               DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),)),
+               DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit')),
+           skips=(
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),)),
     OpInfo('nn.functional.max_pool1d',
            aten_name='max_pool1d',
            supports_autograd=True,
@@ -11637,7 +11664,8 @@ op_db: List[OpInfo] = [
             DecorateInfo(unittest.skip("Different noise"), 'TestUnaryUfuncs', 'test_batch_vs_slicing'),
             DecorateInfo(unittest.skip("Different noise"), 'TestUnaryUfuncs', 'test_contig_vs_every_other'),
             DecorateInfo(unittest.skip("Different noise"), 'TestUnaryUfuncs', 'test_non_contig_expand'),
-            DecorateInfo(unittest.skip("Different noise"), 'TestUnaryUfuncs', 'test_contig_vs_transposed'),)),
+            DecorateInfo(unittest.skip("Different noise"), 'TestUnaryUfuncs', 'test_contig_vs_transposed'),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'))),
     UnaryUfuncInfo(
         'nn.functional.selu',
         ref=lambda x, inplace=False:
@@ -11690,7 +11718,8 @@ op_db: List[OpInfo] = [
             # No meta function
             DecorateInfo(unittest.skip("Skipped!"), 'TestProxyTensorOpInfo', 'test_make_fx_symbolic_exhaustive'),
             DecorateInfo(unittest.skip("Skipped!"), 'TestNormalizeOperators', 'test_normalize_operator_exhaustive'),
-            DecorateInfo(unittest.skip("Skipped"), 'TestDecomp', 'test_comprehensive'),),
+            DecorateInfo(unittest.skip("Skipped"), 'TestDecomp', 'test_comprehensive'),
+            DecorateInfo(unittest.skip('output is non-deterministic (when dropout_p > 0)'), 'TestCommon', 'test_compare_cpu'),),
     ),
     UnaryUfuncInfo(
         'nn.functional.silu',
@@ -12339,7 +12368,11 @@ op_db: List[OpInfo] = [
            supports_autograd=False,
            sample_inputs_func=sample_inputs_ormqr,
            error_inputs_func=error_inputs_ormqr,
-           decorators=[skipCUDAIfNoCusolver, skipCPUIfNoLapack],
+           decorators=[
+               skipCUDAIfNoCusolver,
+               skipCPUIfNoLapack,
+               DecorateInfo(toleranceOverride({torch.float32: tol(atol=1e-04, rtol=1e-04)}),
+                            'TestCommon', 'test_compare_cpu')],
            skips=(
                # ormqr does not support forward when complex inputs require grad
                DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_dtypes'),
@@ -12806,6 +12839,8 @@ op_db: List[OpInfo] = [
                             'TestMathBits', 'test_conj_view'),
                DecorateInfo(toleranceOverride({torch.float32: tol(atol=1e-05, rtol=1.2e-03)}),
                             'TestCommon', 'test_noncontiguous_samples'),
+               DecorateInfo(toleranceOverride({torch.float32: tol(atol=1e-04, rtol=1e-05)}),
+                            'TestCommon', 'test_compare_cpu'),
            ),
            skips=(
                DecorateInfo(unittest.expectedFailure, 'TestNormalizeOperators', 'test_normalize_operator_exhaustive'),
@@ -13355,6 +13390,7 @@ op_db: List[OpInfo] = [
                # test does not work with passing lambda for op
                DecorateInfo(unittest.expectedFailure, "TestNormalizeOperators", "test_normalize_operator_exhaustive"),
                DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
            )),
     OpInfo('pca_lowrank',
            op=lambda *args, **kwargs: wrapper_set_seed(
@@ -13381,6 +13417,7 @@ op_db: List[OpInfo] = [
                # test does not work with passing lambda for op
                DecorateInfo(unittest.expectedFailure, "TestNormalizeOperators", "test_normalize_operator_exhaustive"),
                DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
            )),
     BinaryUfuncInfo('polar',
                     dtypes=floating_types(),
@@ -13771,6 +13808,7 @@ op_db: List[OpInfo] = [
                # 76571 - CUDA gets expectedFailure, but this test passes for ROCm
                DecorateInfo(unittest.expectedFailure, 'TestCudaFuserOpInfo', 'test_nvfuser_extremal_values',
                             dtypes=(torch.float16, torch.float32, torch.float64), active_if=not TEST_WITH_ROCM),
+               DecorateInfo(unittest.skip('Output order is undefined when sorted=False'), 'TestCommon', 'test_compare_cpu'),
            )),
     OpInfo('unique_consecutive',
            dtypes=all_types_and(torch.bool, torch.bfloat16),
@@ -13993,6 +14031,7 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.skip("Skipped!"), 'TestCommon', 'test_non_standard_bool_values'),
                DecorateInfo(unittest.skip("Expected: empty_like is not comparable"), 'TestCompositeCompliance',
                             'test_operator'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
            )),
     OpInfo('zeros_like',
            dtypes=all_types_and_complex_and(torch.bool, torch.half, torch.bfloat16, torch.chalf),
@@ -14050,6 +14089,7 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
                DecorateInfo(unittest.skip("Expected: randn_like is not comparable between dtypes"),
                             'TestCommon', 'test_complex_half_reference_testing'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
            )),
     OpInfo('rand_like',
            dtypes=floating_types_and(torch.half, torch.bfloat16, torch.complex32, torch.complex64, torch.complex128),
@@ -14064,6 +14104,7 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
                DecorateInfo(unittest.skip("Expected: randn_like is not comparable between dtypes"),
                             'TestCommon', 'test_complex_half_reference_testing'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
            )),
     OpInfo('randint_like',
            dtypes=all_types_and(torch.half, torch.bfloat16),
@@ -14076,6 +14117,7 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, "TestNormalizeOperators", "test_normalize_operator_exhaustive"),
                # AssertionError: JIT Test does not execute any logic
                DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
            )),
     OpInfo('full_like',
            dtypes=all_types_and_complex_and(torch.bool, torch.half, torch.bfloat16),
@@ -14173,6 +14215,8 @@ op_db: List[OpInfo] = [
                             'test_operator'),
                DecorateInfo(unittest.skip("Expected: new_empty is not comparable"),
                             'TestCommon', 'test_complex_half_reference_testing'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
+
            ),
            supports_autograd=False),
     OpInfo('new_empty_strided',
@@ -14222,6 +14266,8 @@ op_db: List[OpInfo] = [
                             'TestCudaFuserOpInfo', 'test_nvfuser_extremal_values'),
                DecorateInfo(unittest.skip("Expected: new_empty_strided is not comparable"),
                             'TestCudaFuserOpInfo', 'test_nvfuser_correctness'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
+
            )),
     OpInfo('empty',
            dtypes=all_types_and_complex_and(torch.bool, torch.half, torch.bfloat16, torch.chalf),
@@ -14261,6 +14307,8 @@ op_db: List[OpInfo] = [
                             'TestLazyOpInfo'),
                DecorateInfo(unittest.skip("Expected: empty is not comparable"),
                             'TestCommon', 'test_complex_half_reference_testing'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
+
            )),
     OpInfo('eye',
            dtypes=all_types_and_complex_and(torch.bool, torch.half),
@@ -14314,7 +14362,8 @@ op_db: List[OpInfo] = [
                # AssertionError: JIT Test does not execute any logic
                DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
                # UserWarning not triggered : Resized a non-empty tensor but did not warn about it.
-               DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out_warning')),
+               DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out_warning'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu')),
            supports_autograd=False),
     OpInfo('normal',
            op=lambda inp, *args, **kwargs:
@@ -14334,7 +14383,8 @@ op_db: List[OpInfo] = [
                # UserWarning not triggered : Resized a non-empty tensor but did not warn about it.
                DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out_warning'),
                # Computed gradient is incorrect -- would be an exfail but gradgrad somehow passes
-               DecorateInfo(unittest.skip("Gradients are incorrect!"), 'TestGradients'),)),
+               DecorateInfo(unittest.skip("Gradients are incorrect!"), 'TestGradients'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'))),
     OpInfo('normal',
            # This has its own variant b/c OpInfos assume the first arg is a Tensor but it is not here
            variant_test_name='number_mean',
@@ -14353,7 +14403,8 @@ op_db: List[OpInfo] = [
                # NotImplementedError not raised
                DecorateInfo(unittest.expectedFailure, 'TestGradients', 'test_fn_fwgrad_bwgrad'),
                # Computed gradient is incorrect -- would be an exfail but gradgrad somehow passes
-               DecorateInfo(unittest.skip("Gradients are incorrect!"), 'TestGradients'),)),
+               DecorateInfo(unittest.skip("Gradients are incorrect!"), 'TestGradients'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'))),
     OpInfo('bernoulli',
            op=lambda inp, *args, **kwargs:
                wrapper_set_seed(torch.bernoulli, inp, *args, **kwargs),
@@ -14379,7 +14430,8 @@ op_db: List[OpInfo] = [
                DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out'),
                # UserWarning not triggered : Resized a non-empty tensor but did not warn about it.
                DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_out_warning'),
-               DecorateInfo(unittest.skip('Skipped!'), 'TestCudaFuserOpInfo', 'test_nvfuser_extremal_values'))),
+               DecorateInfo(unittest.skip('Skipped!'), 'TestCudaFuserOpInfo', 'test_nvfuser_extremal_values'),
+               DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'))),
     OpInfo('scatter_add',
            dtypes=all_types_and_complex_and(torch.bool, torch.half, torch.bfloat16),
            sample_inputs_func=sample_inputs_scatter_add,
@@ -15441,7 +15493,8 @@ op_db: List[OpInfo] = [
             # inplace variant dispatches to dropout kernel, while on CUDA
             # the op dispatches to _fused_dropout (with a few more conditions)
             # hence, different values and this skip here
-            DecorateInfo(unittest.skip("Skipped!"), 'TestMathBits', 'test_neg_view', device_type='cuda'),),
+            DecorateInfo(unittest.skip("Skipped!"), 'TestMathBits', 'test_neg_view', device_type='cuda'),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu')),
         supports_forward_ad=True,
         supports_fwgrad_bwgrad=True,
         # https://github.com/pytorch/pytorch/issues/66357
@@ -15459,7 +15512,8 @@ op_db: List[OpInfo] = [
         skips=(
             # lambda impl
             DecorateInfo(unittest.expectedFailure, 'TestNormalizeOperators', 'test_normalize_operator_exhaustive'),
-            DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),),
+            DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu')),
         supports_forward_ad=True,
         supports_fwgrad_bwgrad=True,
         supports_out=False,
@@ -15477,7 +15531,8 @@ op_db: List[OpInfo] = [
         skips=(
             # lambda impl
             DecorateInfo(unittest.expectedFailure, 'TestNormalizeOperators', 'test_normalize_operator_exhaustive'),
-            DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),),
+            DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu')),
         supports_forward_ad=True,
         supports_fwgrad_bwgrad=True,
         supports_out=False,
@@ -15503,7 +15558,8 @@ op_db: List[OpInfo] = [
             # vmap: We do not yet support calling random operations inside of vmap.
             # Please perform random operations outside of vmap as a workaround
             DecorateInfo(unittest.expectedFailure, 'TestGradients', "test_forward_mode_AD"),
-            DecorateInfo(unittest.expectedFailure, 'TestGradients', "test_inplace_forward_mode_AD"),),
+            DecorateInfo(unittest.expectedFailure, 'TestGradients', "test_inplace_forward_mode_AD"),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu')),
         # Runs very slowly on slow gradcheck - alternatively reduce input sizes
         gradcheck_fast_mode=True,
         supports_forward_ad=True,
@@ -15553,6 +15609,8 @@ op_db: List[OpInfo] = [
             # lambda impl
             DecorateInfo(unittest.expectedFailure, 'TestJit', 'test_variant_consistency_jit'),
             DecorateInfo(unittest.expectedFailure, 'TestNormalizeOperators', 'test_normalize_operator_exhaustive'),
+            # Fails on CI https://github.com/pytorch/pytorch/issues/85377
+            DecorateInfo(unittest.skip('Skipped!'), 'TestCommon', 'test_compare_cpu'),
             # Reference: https://github.com/pytorch/pytorch/issues/67084
             DecorateInfo(unittest.skip("Skipped!"), 'TestMathBits', 'test_neg_view', device_type='cuda'),
             # Not a problem: embedding does weird stuff to its input (it renormalizes)
@@ -16808,6 +16866,7 @@ python_ref_db = [
                          'test_neg_view'),
             # dropout is not comparable
             DecorateInfo(unittest.expectedFailure, 'TestCommon', 'test_python_ref_executor'),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
         )
     ),
     ElementwiseUnaryPythonRefInfo(
@@ -16826,6 +16885,9 @@ python_ref_db = [
     PythonRefInfo(
         "_refs.nn.functional.layer_norm",
         torch_opinfo_name="nn.functional.layer_norm",
+        decorators=[
+            DecorateInfo(toleranceOverride({torch.float32: tol(atol=1e-05, rtol=1e-03)}),
+                         'TestCommon', 'test_compare_cpu')],
         skips=(
             # Reference result was farther (3.5762786809723224e-07) from the precise computation
             # than the torch result was (2.5068410824946596e-07)!
@@ -17721,6 +17783,7 @@ python_ref_db = [
                          'test_neg_view'),
             # FIXME: shouldn't check empty results
             DecorateInfo(unittest.skip("Can't check result for empty"), 'TestCommon', 'test_python_ref_executor'),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
         ),
     ),
     PythonRefInfo(
@@ -17751,6 +17814,7 @@ python_ref_db = [
                          'test_neg_view'),
             # FIXME: should not compare results of empty_like
             DecorateInfo(unittest.skip("Can't check result for empty_like"), 'TestCommon', 'test_python_ref_executor'),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
         ),
     ),
     PythonRefInfo(
@@ -17809,6 +17873,7 @@ python_ref_db = [
                          'test_neg_view'),
             # FIXME: should not compare results of empty_like
             DecorateInfo(unittest.skip("Can't check result for new_empty"), 'TestCommon', 'test_python_ref_executor'),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
         ),
     ),
     PythonRefInfo(
@@ -17833,6 +17898,8 @@ python_ref_db = [
             DecorateInfo(unittest.skip("Expected: empty_strided is not comparable"),
                          'TestCommon',
                          'test_python_ref_executor'),
+            DecorateInfo(unittest.skip('output is non-deterministic'), 'TestCommon', 'test_compare_cpu'),
+
         ),
     ),
     PythonRefInfo(

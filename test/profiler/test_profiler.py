@@ -66,6 +66,7 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 import pickle
+import threading
 
 from torch._C._profiler import _ExtraFields_PyCall
 
@@ -1475,6 +1476,85 @@ class TestTorchTidyProfiler(TestCase):
         self.assertEqual(input_info.dtypes, ['float', 'double', 'Scalar'])
         self.assertEqual(input_info.shapes, [[5, 5], [], []])
         self.assertEqual(input_info.ivalues, [None, None, alpha])
+
+    def test_startup_events(self):
+
+        def flat_out_extrafields(nodes, out=None):
+            if out is None:
+                out = []
+            for node in nodes:
+                if isinstance(node.extra_fields, _ExtraFields_PyCall):
+                    out.append(node)
+                flat_out_extrafields(node.children, out)
+            return out
+
+        class Counter():
+            def __init__(self):
+                self._counter = 0
+                self._lock = threading.Lock()
+
+            def increment(self):
+                with self._lock:
+                    self._counter += 1
+
+            def get(self):
+                with self._lock:
+                    return self._counter
+
+        class simpleNet(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.fc1 = nn.Linear(1000, 500)
+                self.fc2 = nn.Linear(500, 2)
+
+            def forward(self, x):
+                return self.fc2(self.fc1(x))
+
+        # Barrier for timeout to avoid deadlock
+        num_prior_threads = 4
+        num_post_start_threads = 1
+        num_threads = num_prior_threads + num_post_start_threads + 1  # main thread
+        start_barrier = threading.Barrier(num_threads, timeout=60)
+        end_barrier = threading.Barrier(num_threads, timeout=60)
+
+        def run_simplenet():
+            def block():
+                start_barrier.wait()
+
+            block()
+            inputs = torch.rand(1000)
+            net = simpleNet()
+            out = net(inputs)
+            end_barrier.wait()
+
+        threads = []
+        for _ in range(4):
+            thrd = threading.Thread(target=run_simplenet)
+            thrd.start()
+            threads.append(thrd)
+
+        with torch.profiler.profile(with_stack=True) as prof:
+            for _ in range(1):
+                thrd = threading.Thread(target=run_simplenet)
+                threads.append(thrd)
+                thrd.start()
+
+            start_barrier.wait()
+            end_barrier.wait()
+            for t in threads:
+                t.join()
+
+        nodes = flat_out_extrafields(prof.profiler.kineto_results.experimental_event_tree())
+        tid = None
+        count = {}
+        for e in nodes:
+            if e.start_tid not in count:
+                count[e.start_tid] = 0
+            count[e.start_tid] += 1
+            self.assertNotEqual(e.start_tid, 2 ** 64 - 1, "max_tid (2^64-1 from uint64_t) should not exits")
+            self.assertLessEqual(len(count), 5, "Expect Five threads")
+        self.assertEqual(len(count), 5, "Expect Five threads")
+        self.assertEqual(sum(count.values()), len(nodes), "Something Wrong in tid counting")
 
     def test_nnmodule_params(self):
 

@@ -40,6 +40,7 @@ namespace {
 enum CallType { PyCall = 0, PyModuleCall, PyCCall, PyOptimizerCall };
 static constexpr size_t CallTypeSize = 4;
 using no_ephemeral_t = std::tuple<>;
+static constexpr uint64_t tid_max = std::numeric_limits<uint64_t>::max();
 
 // ============================================================================
 // == Miscellaneous structs and utils =========================================
@@ -617,8 +618,17 @@ class PythonTracer final : public python_tracer::PythonTracerBase {
       std::vector<python_tracer::CompressedEvent>& enters,
       time_t end_time_ns) override;
 
+  struct Frame {
+    TraceKey trace_key_;
+    approx_time_t start_time;
+  };
+  std::vector<Frame> start_frames;
+
  private:
-  void recordPyCall(ThreadLocalResults& tls, PyFrameObject* frame);
+  void recordPyCall(
+      ThreadLocalResults& tls,
+      PyFrameObject* frame,
+      bool is_startup_frame = false);
   void recordCCall(
       ThreadLocalResults& tls,
       PyFrameObject* frame,
@@ -657,18 +667,14 @@ PythonTracer::PythonTracer(torch::profiler::impl::RecordQueue* queue)
   // position zero to ensure that it is traced, and so we can restore the
   // thread state after registration. The profiler cannot post process multiple
   // python threads yet, so this section is temporarily disabled.
-  std::vector<PyThreadState*> thread_states{PyThreadState_Get()};
-  /*
-  if (all_threads) {
-    auto thread_state = thread_states[0];
-    while (thread_state != nullptr) {
-      if (thread_state != thread_states[0]) {
-        thread_states.push_back(thread_state);
-      }
-      thread_state = PyThreadState_Next(thread_state);
-    }
+  auto* const current_thread = PyThreadState_Get();
+  auto* thread_state = PyInterpreterState_ThreadHead(current_thread->interp);
+  std::vector<PyThreadState*> thread_states;
+
+  while (thread_state != nullptr) {
+    thread_states.push_back(thread_state);
+    thread_state = PyThreadState_Next(thread_state);
   }
-  */
 
   // Register the tracer in each thread.
   for (const auto i : c10::irange(thread_states.size())) {
@@ -683,15 +689,15 @@ PythonTracer::PythonTracer(torch::profiler::impl::RecordQueue* queue)
     // to all the prior frames onto our event stack. (We stop at depth=128)
     std::vector<PyFrameObject*> current_stack;
     auto frame = PyEval_GetFrame();
-    Py_INCREF(frame);
     size_t depth = 0; // Make sure we can't infinite loop.
     while (frame != nullptr && depth <= 128) {
+      Py_INCREF(frame);
       current_stack.push_back(frame);
       frame = PyFrame_GetBack(frame);
       depth++;
     }
     for (auto it = current_stack.rbegin(); it != current_stack.rend(); it++) {
-      recordPyCall(thread_local_results_.back(), *it);
+      recordPyCall(thread_local_results_.back(), *it, true);
       Py_DECREF(*it);
     }
 
@@ -701,8 +707,8 @@ PythonTracer::PythonTracer(torch::profiler::impl::RecordQueue* queue)
     PyEval_SetProfile(PythonTracer::pyProfileFn, (PyObject*)ctx);
   }
 
-  // Restore the thread state to its initial value.
-  PyThreadState_Swap(thread_states[0]);
+  // Restore the thread state to original thread.
+  PyThreadState_Swap(current_thread);
 };
 
 void PythonTracer::stop() {
@@ -728,7 +734,10 @@ PythonTracer::~PythonTracer() {
   }
 }
 
-void PythonTracer::recordPyCall(ThreadLocalResults& tls, PyFrameObject* frame) {
+void PythonTracer::recordPyCall(
+    ThreadLocalResults& tls,
+    PyFrameObject* frame,
+    bool is_startup_frame) {
   static constexpr auto E = EventType::PyCall;
   auto get_key = [&]() -> TraceKey {
     auto code = THPCodeObjectPtr(PyFrame_GetCode(frame));
@@ -763,7 +772,11 @@ void PythonTracer::recordPyCall(ThreadLocalResults& tls, PyFrameObject* frame) {
       return tls.intern<CallType::PyCall, E>(no_ephemeral_t(), frame, f_back);
     }
   };
-  queue_->getSubqueue()->emplace_py_call(get_key(), getApproximateTime());
+  if (is_startup_frame) {
+    start_frames.push_back({get_key(), getApproximateTime()});
+  } else {
+    queue_->getSubqueue()->emplace_py_call(get_key(), getApproximateTime());
+  }
 }
 
 void PythonTracer::recordCCall(
@@ -809,6 +822,18 @@ class PostProcess {
     }
   }
 
+  void set_start_frames(
+      const std::vector<PythonTracer::Frame>& start_frames,
+      std::vector<python_tracer::CompressedEvent>& enters) {
+    for (const auto& frame : start_frames) {
+      enters.push_back(
+          {frame.trace_key_,
+           tid_max, // Allows us to detect unhandled start frames
+           enters.begin()->kineto_info_,
+           time_converter_(frame.start_time)});
+    }
+  }
+
   template <CallType C>
   void operator()(
       const TraceKeyCacheState<C>& trace_cache,
@@ -845,6 +870,7 @@ class PostProcess {
   void populate(
       std::vector<python_tracer::CompressedEvent>& enters,
       std::vector<std::shared_ptr<Result>>& out) {
+    const auto initial_size = out.size();
     using stack_t = std::vector<std::shared_ptr<Result>>;
     auto pop = [](stack_t& stack, time_t t) {
       TORCH_INTERNAL_ASSERT(stack.size(), "Python replay stack is empty.");
@@ -863,6 +889,7 @@ class PostProcess {
           pop(stacks[exit.python_tid_], exit.t_);
           state.exits_.pop();
         }
+
         out.push_back(Result::create(
             enter.enter_t_,
             enter.system_tid_,
@@ -878,6 +905,19 @@ class PostProcess {
       while (!i.second.empty()) {
         pop(i.second, end_time_);
       }
+    }
+    // Assign system TIDs to start events based on the system TID of the next
+    // observed event.
+    ska::flat_hash_map<size_t, size_t> tid_map;
+    auto it = out.rbegin();
+    for (C10_UNUSED auto _ : c10::irange(initial_size, out.size())) {
+      auto py_tid = c10::get<ExtraFields<E>>((*it)->extra_fields_).python_tid_;
+      if ((*it)->start_tid_ == tid_max) {
+        SOFT_ASSERT(E == EventType::PyCall, "Wrong event type!");
+        (*it)->start_tid_ = tid_map.insert({py_tid, tid_max}).first->second;
+      }
+      tid_map[py_tid] = (*it)->start_tid_;
+      ++it;
     }
   }
 
@@ -926,6 +966,7 @@ std::vector<std::shared_ptr<Result>> PythonTracer::getEvents(
   value_cache_.trimPrefixes();
   PostProcess post_process(
       time_converter, thread_local_results_, value_cache_, end_time_ns);
+  post_process.set_start_frames(start_frames, enters);
   auto out = post_process.run(enters);
 
   std::stable_sort(out.begin(), out.end(), [](const auto& a, const auto& b) {

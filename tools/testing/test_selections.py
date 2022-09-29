@@ -6,40 +6,55 @@ from typing import Dict, List, Tuple
 from tools.stats.import_test_stats import get_disabled_tests, get_slow_tests
 
 NUM_PROCS = 3
+LARGE_TEST = 45 * 60
+
+TestJob = Tuple[str, int, int, float]
+
+
+class ShardJob:
+    def __init__(self, test_times: Dict[str, float]):
+        self.test_times = test_times
+        self.test_jobs: List[TestJob] = []
+
+    def get_total_time(self) -> float:
+        return sum(x[3] for x in self.test_jobs)
+
+    def convert_to_tuple(self) -> Tuple[float, List[TestJob]]:
+        return (self.get_total_time(), self.test_jobs)
 
 
 def calculate_shards(
-    num_shards: int, tests: List[str], job_times: Dict[str, float]
-) -> List[Tuple[float, List[str]]]:
-    filtered_job_times: Dict[str, float] = {}
-    unknown_jobs: List[str] = []
-    for test in tests:
-        if test in job_times:
-            filtered_job_times[test] = job_times[test]
-        else:
-            unknown_jobs.append(test)
+    num_shards: int,
+    tests: List[str],
+    test_times: Dict[str, float],
+) -> List[Tuple[float, List[TestJob]]]:
+    known_tests = [x for x in tests if x in test_times]
+    unknown_tests = [x for x in tests if x not in known_tests]
 
-    # The following attempts to implement a partition approximation greedy algorithm
-    # See more at https://en.wikipedia.org/wiki/Greedy_number_partitioning
-    sorted_jobs = sorted(
-        filtered_job_times, key=lambda j: filtered_job_times[j], reverse=True
-    )
-    sharded_jobs: List[Tuple[float, List[str]]] = [(0.0, []) for _ in range(num_shards)]
-    for job in sorted_jobs:
-        min_shard_index = sorted(range(num_shards), key=lambda i: sharded_jobs[i][0])[0]
-        curr_shard_time, curr_shard_jobs = sharded_jobs[min_shard_index]
-        curr_shard_jobs.append(job)
-        sharded_jobs[min_shard_index] = (
-            curr_shard_time + filtered_job_times[job],
-            curr_shard_jobs,
-        )
+    test_jobs: List[TestJob] = []
+    for test in known_tests:
+        test_time = test_times[test]
+        if test_time > LARGE_TEST:
+            test_shards = int(test_time // LARGE_TEST + 1)
+            for i in range(test_shards):
+                test_jobs.append((test, i, test_shards, test_time / test_shards))
+        else:
+            test_jobs.append((test, 0, 1, test_time))
+
+    test_jobs = sorted(test_jobs, key=lambda x: x[3], reverse=True)
+
+    sharded_jobs: List[ShardJob] = [ShardJob(test_times) for _ in range(num_shards)]
+
+    for test_job in test_jobs:
+        min_sharded_job = sorted(sharded_jobs, key=lambda j: j.get_total_time())[0]
+        min_sharded_job.test_jobs.append(test_job)
 
     # Round robin the unknown jobs starting with the smallest shard
-    index = sorted(range(num_shards), key=lambda i: sharded_jobs[i][0])[0]
-    for job in unknown_jobs:
-        sharded_jobs[index][1].append(job)
+    index = sorted(range(num_shards), key=lambda i: sharded_jobs[i].get_total_time())[0]
+    for test in unknown_tests:
+        sharded_jobs[index].test_jobs.append((test, 0, 1, 0.0))
         index = (index + 1) % num_shards
-    return sharded_jobs
+    return [job.convert_to_tuple() for job in sharded_jobs]
 
 
 def _query_changed_test_files() -> List[str]:
@@ -55,7 +70,7 @@ def _query_changed_test_files() -> List[str]:
     return lines
 
 
-def get_reordered_tests(tests: List[str]) -> List[str]:
+def get_reordered_tests(tests: List[TestJob]) -> List[TestJob]:
     """Get the reordered test filename list based on github PR history or git changed file."""
     prioritized_tests: List[str] = []
     if len(prioritized_tests) == 0:
@@ -77,7 +92,7 @@ def get_reordered_tests(tests: List[str]) -> List[str]:
     the_rest = []
 
     for test in tests:
-        if test in prioritized_tests:
+        if test[0] in prioritized_tests:
             bring_to_front.append(test)
         else:
             the_rest.append(test)

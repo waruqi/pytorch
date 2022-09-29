@@ -183,7 +183,7 @@ class TestFXGraphPasses(JitTestCase):
         (TestPartitionFunctions.forward9, [['add_3', 'add_2', 'add_1', 'add']]),
         (TestPartitionFunctions.forward10, [['add_3', 'add_2', 'add', 'add_1']]),
         (TestPartitionFunctions.forward11, [['add_1'], ['add']]),
-    ])
+    ], name_fn=lambda x, y: f"fn_{x.__name__}_expected_partition_{y}")
     def test_partitioner(self, fn, expected_partition):
         traced = symbolic_trace(fn)
 
@@ -210,7 +210,7 @@ class TestFXGraphPasses(JitTestCase):
         (TestPartitionFunctions.forward3, [["add_2", "add_1", "add"]]),
         # horizontal fusion with a common downstream node, not supported yet
         (TestPartitionFunctions.forward4, [["add_2", "add_1", "add"]]),
-    ])
+    ], name_fn=lambda x, y: f"fn_{x.__name__}_expetected_partition_{y}")
     def test_partitioner_xfail(self, fn, expected_partition):
         traced = symbolic_trace(fn)
 
@@ -683,7 +683,7 @@ class TestFXMatcherUtils(JitTestCase):
         MultipleOutputsHorizontalPattern,
         MultiOutputWithWithInvalidMatches,
         QuantizationFp8Pattern,
-    ])
+    ], name_fn=lambda x: f"test_model_{x.__name__}")
     def test_subgraph_matcher(self, test_model):
 
         setup = getattr(test_model, "setup", None)

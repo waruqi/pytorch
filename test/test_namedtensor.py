@@ -1191,13 +1191,21 @@ class TestNamedTensor(TestCase):
                 'nanmean',
                 'nansum',
             ]
+            op_requires_correction_arg = [
+                'std',
+                'var',
+                'std_mean',
+                'var_mean',
+            ]
+            extra_kwargs = dict(correction=1) if op.__name__ in op_requires_correction_arg else {}
+
             if op.__name__ in ops_support_dim_none:
-                check_output(op(t, None), [])
+                check_output(op(t, None, **extra_kwargs), [])
             else:
                 with self.assertRaisesRegex(RuntimeError, 'Please look up dimensions by name'):
-                    op(t, None)
+                    op(t, None, **extra_kwargs)
             with self.assertRaisesRegex(RuntimeError, 'Name \'H\' not found'):
-                op(t, 'H')
+                op(t, 'H', **extra_kwargs)
 
         def test_autograd_supports_dimname_overload(op, device):
             t = torch.empty(2, 3, 5, names=('N', 'C', 'L'), device=device, requires_grad=True)

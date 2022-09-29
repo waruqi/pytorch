@@ -10622,11 +10622,11 @@ the :attr:`correction`.
     + r"""
 
 Note:
-   In PyTorch 1.8 and earlier :func:`std` accepted an :attr:`unbiased` argument
-   which was a less general form of the :attr:`correction` parameter. If
-   :attr:`unbiased` was ``True`` it implied ``correction=1`` (this was the
-   default). If :attr:`unbiased` was ``False`` then it implied
-   ``correction=0``.
+   In PyTorch 1.8 and earlier :func:`std` accepted a (now deprecated)
+   :attr:`unbiased` argument which was a less general form of the
+   :attr:`correction` parameter. If :attr:`unbiased` was ``True`` it implied
+   ``correction=1`` (this was the default). If :attr:`unbiased` was ``False``
+   then it implied ``correction=0``.
 
 {keepdim_details}
 
@@ -10681,11 +10681,11 @@ the :attr:`correction`.
     + r"""
 
 Note:
-   In PyTorch 1.8 and earlier :func:`std_mean` accepted an :attr:`unbiased`
-   argument which was a less general form of the :attr:`correction` parameter.
-   If :attr:`unbiased` was ``True`` it implied ``correction=1`` (this was the
-   default). If :attr:`unbiased` was ``False`` then it implied
-   ``correction=0``.
+   In PyTorch 1.8 and earlier :func:`std_mean` accepted a (now deprecated)
+   :attr:`unbiased` argument which was a less general form of the
+   :attr:`correction` parameter. If :attr:`unbiased` was ``True`` it implied
+   ``correction=1`` (this was the default). If :attr:`unbiased` was ``False``
+   then it implied ``correction=0``.
 
 {keepdim_details}
 
@@ -12093,11 +12093,11 @@ the :attr:`correction`.
     + r"""
 
 Note:
-   In PyTorch 1.8 and earlier :func:`var` accepted an :attr:`unbiased` argument
-   which was a less general form of the :attr:`correction` parameter. If
-   :attr:`unbiased` was ``True`` it implied ``correction=1`` (this was the
-   default). If :attr:`unbiased` was ``False`` then it implied
-   ``correction=0``.
+   In PyTorch 1.8 and earlier :func:`var` accepted a (now deprecated)
+   :attr:`unbiased` argument which was a less general form of the
+   :attr:`correction` parameter. If :attr:`unbiased` was ``True`` it implied
+   ``correction=1`` (this was the default). If :attr:`unbiased` was ``False``
+   then it implied ``correction=0``.
 
 {keepdim_details}
 
@@ -12151,11 +12151,11 @@ the :attr:`correction`.
     + r"""
 
 Note:
-   In PyTorch 1.8 and earlier :func:`var_mean` accepted an :attr:`unbiased`
-   argument which was a less general form of the :attr:`correction` parameter.
-   If :attr:`unbiased` was ``True`` it implied ``correction=1`` (this was the
-   default). If :attr:`unbiased` was ``False`` then it implied
-   ``correction=0``.
+   In PyTorch 1.8 and earlier :func:`var_mean` accepted a (now deprecated)
+   :attr:`unbiased` argument which was a less general form of the
+   :attr:`correction` parameter. If :attr:`unbiased` was ``True`` it implied
+   ``correction=1`` (this was the default). If :attr:`unbiased` was ``False``
+   then it implied ``correction=0``.
 
 {keepdim_details}
 

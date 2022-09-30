@@ -869,12 +869,19 @@ void Engine::evaluate_function(
   auto& exec_info_ = graph_task->exec_info_;
   if (!exec_info_.empty()) {
     auto& fn_info = exec_info_.at(func);
+    variable_list new_inputs = inputs.buffer;
+    if (!fn_info.needed_ && fn_info.captures_) {
+      // call the prehooks of the next node
+      new_inputs =
+          call_pre_hooks(*func, InputBuffer::variables(std::move(inputs)));
+    }
     if (auto* capture_vec = fn_info.captures_.get()) {
+      const auto opt_parent_stream = (*func).stream(c10::DeviceType::CUDA);
       // Lock mutex for writing to graph_task->captured_vars_.
       std::lock_guard<std::mutex> lock(graph_task->mutex_);
       for (const auto& capture : *capture_vec) {
         auto& captured_grad = graph_task->captured_vars_[capture.output_idx_];
-        captured_grad = inputs[capture.input_idx_];
+        captured_grad = new_inputs[capture.input_idx_];
         for (auto& hook : capture.hooks_) {
           captured_grad = (*hook)(captured_grad);
         }
@@ -885,7 +892,7 @@ void Engine::evaluate_function(
       }
     }
     if (!fn_info.needed_) {
-      // Skip execution if we don't need to execute the function.
+      // Skip execution if we don't need to execute the function
       return;
     }
   }

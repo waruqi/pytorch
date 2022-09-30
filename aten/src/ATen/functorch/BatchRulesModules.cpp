@@ -295,7 +295,7 @@ template <typename F, F Func, typename A, typename B, typename C, typename... T>
 struct UpsampleBackwardBatchRuleHelper<F, Func, typelist<A, B, C, T...>> {
   static std::tuple<Tensor,optional<int64_t>> apply(
       const Tensor& grad_output, optional<int64_t> grad_output_bdim,
-      OptionalArrayRef<int64_t> output_size, IntArrayRef input_size,
+      IntArrayRef output_size, IntArrayRef input_size,
       T... extra_args) {
     auto grad_output_ = reshape_dim_into(*grad_output_bdim, 0, grad_output);
     TORCH_INTERNAL_ASSERT(input_size.size() > 0);
@@ -314,6 +314,32 @@ struct UpsampleBackwardBatchRuleHelper<F, Func, typelist<A, B, C, T...>> {
 
 };
 
+template <typename A, A a, typename C>
+struct UpsampleBackwardBatchRuleHelper1;
+
+
+template <typename F, F Func, typename A, typename B, typename C, typename... T>
+struct UpsampleBackwardBatchRuleHelper1<F, Func, typelist<A, B, C, T...>> {
+  static std::tuple<Tensor,optional<int64_t>> apply(
+      const Tensor& grad_output, optional<int64_t> grad_output_bdim,
+      IntArrayRef output_size, IntArrayRef input_size,
+      T... extra_args) {
+    auto grad_output_ = reshape_dim_into(*grad_output_bdim, 0, grad_output);
+    TORCH_INTERNAL_ASSERT(input_size.size() > 0);
+
+    // input_size is wrong so we correct it
+    DimVector physical_input_size(input_size.begin(), input_size.end());
+    physical_input_size[0] = grad_output_.sizes()[0];
+
+    auto out = Func(
+        grad_output_,
+        output_size,
+        physical_input_size,
+        std::forward<T>(extra_args)...);
+    return std::make_tuple(reshape_dim_outof(0, grad_output.sizes()[*grad_output_bdim], out), 0);
+  }
+
+};
 template <typename A, A a, typename C>
 struct GridSampleBatchRuleHelper;
 
@@ -375,15 +401,15 @@ struct CudnnGridSampleBackwardBatchRuleHelper {
 #define CUDNN_GRID_SAMPLE_BW_BATCH_RULE(fn)\
     CudnnGridSampleBackwardBatchRuleHelper<decltype(&ATEN_FN(fn)), &ATEN_FN(fn)>::apply
 
-#define UPSAMPLE_BACKWARD(op, overload) VMAP_SUPPORT2(op, overload, SINGLE_ARG(\
-    UpsampleBackwardBatchRuleHelper<\
-      decltype(&ATEN_FN2(op, overload)),\
-      &ATEN_FN2(op, overload),\
-      c10::guts::function_traits<decltype(ATEN_FN2(op, overload))>::parameter_types>::apply))
-
 #define UPSAMPLE_BATCH(op) \
   EXISTING_BDIM2(op, vec); \
   EXISTING_BDIM(op);
+
+#define UPSAMPLE_BACKWARD(op) VMAP_SUPPORT(op, SINGLE_ARG(\
+    UpsampleBackwardBatchRuleHelper<\
+      decltype(&ATEN_FN(op)),\
+      &ATEN_FN(op),\
+      c10::guts::function_traits<decltype(ATEN_FN(op))>::parameter_types>::apply))
 
 
 TORCH_LIBRARY_IMPL(aten, FuncTorchBatched, m) {
@@ -430,13 +456,13 @@ TORCH_LIBRARY_IMPL(aten, FuncTorchBatched, m) {
   UPSAMPLE_BATCH(upsample_nearest3d);
   UPSAMPLE_BATCH(upsample_trilinear3d);
 
-  UPSAMPLE_BACKWARD(upsample_bicubic2d_backward, vec);
-  UPSAMPLE_BACKWARD(upsample_bilinear2d_backward, vec);
-  UPSAMPLE_BACKWARD(upsample_linear1d_backward, vec);
-  UPSAMPLE_BACKWARD(upsample_nearest1d_backward, vec);
-  UPSAMPLE_BACKWARD(upsample_nearest2d_backward, vec);
-  UPSAMPLE_BACKWARD(upsample_nearest3d_backward, vec);
-  UPSAMPLE_BACKWARD(upsample_trilinear3d_backward, vec);
+  UPSAMPLE_BACKWARD(upsample_bicubic2d_backward);
+  UPSAMPLE_BACKWARD(upsample_bilinear2d_backward);
+  UPSAMPLE_BACKWARD(upsample_linear1d_backward);
+  UPSAMPLE_BACKWARD(upsample_nearest1d_backward);
+  UPSAMPLE_BACKWARD(upsample_nearest2d_backward);
+  UPSAMPLE_BACKWARD(upsample_nearest3d_backward);
+  UPSAMPLE_BACKWARD(upsample_trilinear3d_backward);
   m.impl("one_hot", one_hot_decomposition_hack);
 }
 }}
